@@ -1,8 +1,9 @@
 /**
- * @file filaments.c
- * @brief This file contains the simulation code for the pinch-off of a liquid filament.
+ * @file filament_initialCondition.c
+ * @brief This code will give an initial condition where the filament is stretched out, to be used for filament_retraction_VE.c
+ * The relaxation time is taken as infinity here to ensure that the polymers undergo affine deformation while stretching. 
  * @author Vatsal Sanjay
- * @version 1.0
+ * @version 1.1
  * @date Oct 26, 2024
 */
 
@@ -17,7 +18,7 @@
 #include "navier-stokes/conserving.h"
 #include "tension.h"
 
-#define tsnap (1e-2)
+#define tsnap (5e-2)
 
 // Error tolerancs
 #define fErr (1e-3)                                 // error tolerance in f1 VOF
@@ -26,7 +27,7 @@
 #define trAErr (1e-3)                                // error tolerance in trace of conformation tensor
 
 #define R2(x,y,z) (sqrt(sq(x) + sq(y)))
-#define U0 1.0 // this is an adhoc initial condition to make the filament form!
+#define U0 4.0 // this is an adhoc initial condition to make the filament form!
 
 // boundary conditions
 u.n[top] = neumann(0.0);
@@ -44,18 +45,18 @@ char nameOut[80], dumpFile[80];
 
 int main(int argc, char const *argv[]) {
 
-  L0 = 8e0;
+  L0 = 16.;
   X0 = -L0/2.;
   
   // Values taken from the terminal
-  MAXlevel = 9;
-  tmax = 20;
-  Oh = 1e-2;
+  MAXlevel = 12;
+  tmax = 1.75;
+  Oh = 1.25e-2;
   Oha = 1e-2 * Oh;
-  De = 0.0; // 1e-1;
-  Ec = 0.0 // 1e-2;
+  De = 1e2; // 1e-1;
+  Ec = 0.0; // 1e-2;
 
-  init_grid (1 << 4);
+  init_grid (1 << 6);
 
   // Create a folder named intermediate where all the simulation snapshots are stored.
   char comm[80];
@@ -156,8 +157,8 @@ event logWriting (i++) {
 
   assert(ke > -1e-10);
 
-  if (i > 1e1 && pid() == 0) {
-    if (ke > 1e2 || ke < 1e-8) {
+  if (i > 1e4 && pid() == 0) {
+    if (ke > 1e2*sq(U0) || ke < 1e-8) {
       const char* message = (ke > 1e2) ? 
         "The kinetic energy blew up. Stopping simulation\n" : 
         "kinetic energy too small now! Stopping!\n";
