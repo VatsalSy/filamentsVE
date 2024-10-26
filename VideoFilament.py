@@ -86,7 +86,7 @@ def gettingfield(filename, zmin, zmax, rmax, nr):
     return R, Z, D2, vel, taup, nz
 # ----------------------------------------------------------------------------------------------------------------------
 
-def process_timestep(ti, folder, nGFS, Ldomain, GridsPerR, Oh1, Oh2, Oh3, rmin, rmax, zmin, zmax, lw):
+def process_timestep(ti, folder, nGFS, GridsPerR, rmin, rmax, zmin, zmax, lw):
     t = 0.01 * ti
     place = f"intermediate/snapshot-{t:.4f}"
     name = f"{folder}/{int(t*1000):08d}.png"
@@ -106,8 +106,8 @@ def process_timestep(ti, folder, nGFS, Ldomain, GridsPerR, Oh1, Oh2, Oh3, rmin, 
         print(f"Problem in the available file {place}")
         return
 
-    nr = int(GridsPerR * Ldomain)
-    R, Z, taus, vel, taup, nz = gettingfield(place, zmin, zmax, rmax, nr, Oh1, Oh2, Oh3)
+    nr = int(GridsPerR * rmax)
+    R, Z, taus, vel, taup, nz = gettingfield(place, zmin, zmax, rmax, nr)
     zminp, zmaxp, rminp, rmaxp = Z.min(), Z.max(), R.min(), R.max()
 
     # Plotting
@@ -126,10 +126,10 @@ def process_timestep(ti, folder, nGFS, Ldomain, GridsPerR, Oh1, Oh2, Oh3, rmin, 
     line_segments = LineCollection(segs1, linewidths=4, colors='blue', linestyle='solid')
     ax.add_collection(line_segments)
 
-    cntrl1 = ax.imshow(taus, cmap="hot_r", interpolation='Bilinear', origin='lower', extent=[-rminp, -rmaxp, zminp, zmaxp], vmax=1.0, vmin=-3.0)
+    cntrl1 = ax.imshow(taus, cmap="hot_r", interpolation='Bilinear', origin='lower', extent=[-rminp, -rmaxp, zminp, zmaxp], vmax=2.0, vmin=-3.0)
 
     # TODO: fixme the colorbar bounds for taup must be set manually based on the simulated case.
-    cntrl2 = ax.imshow(taup, interpolation='Bilinear', cmap=custom_cmap, origin='lower', extent=[rminp, rmaxp, zminp, zmaxp], vmax=0.0, vmin=-3.0)
+    cntrl2 = ax.imshow(taup, interpolation='Bilinear', cmap=custom_cmap, origin='lower', extent=[rminp, rmaxp, zminp, zmaxp], vmax=2.0, vmin=-3.0)
 
     ax.set_aspect('equal')
     ax.set_xlim(rmin, rmax)
@@ -137,16 +137,21 @@ def process_timestep(ti, folder, nGFS, Ldomain, GridsPerR, Oh1, Oh2, Oh3, rmin, 
     ax.set_title(f'$t/\\tau_\\gamma$ = {t:4.3f}', fontsize=TickLabel)
 
     l, b, w, h = ax.get_position().bounds
-    cb1 = fig.add_axes([l+0.05*w, b-0.05, 0.40*w, 0.03])
-    c1 = plt.colorbar(cntrl1, cax=cb1, orientation='horizontal')
-    c1.set_label(r'$\log_{10}\left(\varepsilon_\eta\right)$', fontsize=TickLabel, labelpad=5)
+    # Left colorbar
+    cb1 = fig.add_axes([l-0.04, b, 0.03, h])
+    c1 = plt.colorbar(cntrl1, cax=cb1, orientation='vertical')
+    c1.set_label(r'$\log_{10}\left(\|\mathcal{D}\|\right)$', fontsize=TickLabel, labelpad=5)
     c1.ax.tick_params(labelsize=TickLabel)
-    c1.ax.xaxis.set_major_formatter(StrMethodFormatter('{x:,.1f}'))
-    cb2 = fig.add_axes([l+0.55*w, b-0.05, 0.40*w, 0.03])
-    c2 = plt.colorbar(cntrl2, cax=cb2, orientation='horizontal')
+    c1.ax.yaxis.set_ticks_position('left')
+    c1.ax.yaxis.set_label_position('left')
+    c1.ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.1f}'))
+    
+    # Right colorbar
+    cb2 = fig.add_axes([l+w+0.01, b, 0.03, h])
+    c2 = plt.colorbar(cntrl2, cax=cb2, orientation='vertical')
     c2.ax.tick_params(labelsize=TickLabel)
-    c2.set_label(r'$\log_{10}\left(\text{tr}\left(\sigma_p\right)/2\right)$', fontsize=TickLabel)
-    c2.ax.xaxis.set_major_formatter(StrMethodFormatter('{x:,.2f}'))
+    c2.set_label(r'$\log_{10}\left(\text{tr}\left(\mathcal{A}\right)-1\right)$', fontsize=TickLabel)
+    c2.ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.2f}'))
     ax.axis('off')
 
     plt.savefig(name, bbox_inches="tight")
@@ -159,9 +164,9 @@ def main():
 
     nGFS = 550
     Ldomain = 12
-    GridsPerR = 256
-    nr = int(GridsPerR * Ldomain)
     rmin, rmax, zmin, zmax = [-1.75, 1.75, -Ldomain/2., Ldomain/2.]
+    GridsPerR = 100
+
     lw = 2
     folder = 'Video'
 
@@ -170,8 +175,13 @@ def main():
 
     # Create a pool of worker processes
     with mp.Pool(processes=num_processes) as pool:
+        # Create partial function with fixed arguments
+        process_func = partial(process_timestep, 
+                             folder=folder, nGFS=nGFS,
+                             GridsPerR=GridsPerR, rmin=rmin, rmax=rmax, 
+                             zmin=zmin, zmax=zmax, lw=lw)
         # Map the process_func to all timesteps
-        pool.map(process_timestep, range(nGFS))
+        pool.map(process_func, range(nGFS))
 
 if __name__ == "__main__":
     main()
