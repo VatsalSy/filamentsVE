@@ -12,6 +12,8 @@ from matplotlib.collections import LineCollection
 from matplotlib.ticker import StrMethodFormatter
 import multiprocessing as mp
 from functools import partial
+import argparse  # Add at top with other imports
+import sys
 
 import matplotlib.colors as mcolors
 custom_colors = ["white", "#DA8A67", "#A0522D", "#400000"]
@@ -151,29 +153,25 @@ def process_timestep(ti, folder, nGFS, Ldomain, GridsPerR, Oh1, Oh2, Oh3, rmin, 
     plt.close()
 
 def main():
+    # Get number of CPUs from command line argument, or use all available
+    CPUStoUse = int(sys.argv[1]) if len(sys.argv) > 1 else mp.cpu_count()
+    num_processes = CPUStoUse
+
     nGFS = 550
-    Ldomain = 16
+    Ldomain = 12
     GridsPerR = 256
     nr = int(GridsPerR * Ldomain)
-    rmin, rmax, zmin, zmax = [-1.5, 1.5, -8.0, 8.0]
+    rmin, rmax, zmin, zmax = [-1.75, 1.75, -Ldomain/2., Ldomain/2.]
     lw = 2
     folder = 'Video'
 
     if not os.path.isdir(folder):
         os.makedirs(folder)
 
-    # Prepare the partial function with fixed arguments
-    process_func = partial(process_timestep, folder=folder, nGFS=nGFS, Ldomain=Ldomain, 
-                           GridsPerR=GridsPerR, 
-                           rmin=rmin, rmax=rmax, zmin=zmin, zmax=zmax, lw=lw)
-
-    # Use all available CPU cores
-    num_processes = mp.cpu_count()
-    
     # Create a pool of worker processes
     with mp.Pool(processes=num_processes) as pool:
         # Map the process_func to all timesteps
-        pool.map(process_func, range(nGFS))
+        pool.map(process_timestep, range(nGFS))
 
 if __name__ == "__main__":
     main()
