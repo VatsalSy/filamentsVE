@@ -49,7 +49,7 @@ int main(int argc, char const *argv[]) {
   X0 = -L0/2.;
   
   // Values taken from the terminal
-  MAXlevel = 12;
+  MAXlevel = 10;
   tmax = 1.75;
   Oh = 1.25e-2;
   Oha = 1e-2 * Oh;
