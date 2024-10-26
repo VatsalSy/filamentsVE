@@ -10,6 +10,7 @@ filamentsVE*
 *.s*
 !*.c
 !*.h
+!*.sbatch
 
 # Object files
 *.o
