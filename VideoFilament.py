@@ -164,7 +164,7 @@ def main():
 
     nGFS = 550
     Ldomain = 12
-    rmin, rmax, zmin, zmax = [-1.75, 1.75, -Ldomain/2., Ldomain/2.]
+    rmin, rmax, zmin, zmax = [-2.0, 2.0, -Ldomain/2., Ldomain/2.]
     GridsPerR = 100
 
     lw = 2
