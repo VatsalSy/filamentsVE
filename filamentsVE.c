@@ -75,6 +75,9 @@ int main(int argc, char const *argv[]) {
 
 }
 
+#define FIRST_START 1
+
+#if FIRST_START
 event init (t = 0) {
   if (!restore (file = "restart_init_stretched_filament")){
     fprintf(ferr, "No restart file found. Exiting!\n");
@@ -85,6 +88,14 @@ event init (t = 0) {
       u.x[] = 0.0;
   }
 }
+#else
+event init (t = 0) {
+  if (!restore (file = dumpFile)){
+    fprintf(ferr, "No restart file found. Exiting!\n");
+    return 1;
+  }
+}
+#endif
 
 /**
 ## Adaptive Mesh Refinement
