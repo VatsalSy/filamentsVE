@@ -137,19 +137,15 @@ event logWriting (i++) {
       return 1;
     }
 
-    scalar pos[];
-    position (f, pos, {0,1,0});
-    double ymin = statsf(pos).min;
-
     if (i == 0) {
       fprintf(ferr, "Level %d, Oh %2.1e, Oha %2.1e, De %2.1e, Ec %2.1e\n", MAXlevel, Oh, Oha, De, Ec);
-      fprintf(ferr, "i dt t ke ymin\n");
+      fprintf(ferr, "i dt t ke\n");
       fprintf(fp, "Level %d, Oh %2.1e, Oha %2.1e, De %2.1e, Ec %2.1e\n", MAXlevel, Oh, Oha, De, Ec);
-      fprintf(fp, "i dt t ke ymin\n");
+      fprintf(fp, "i dt t ke\n");
     }
 
-    fprintf(fp, "%d %g %g %g %g\n", i, dt, t, ke, ymin);
-    fprintf(ferr, "%d %g %g %g %g\n", i, dt, t, ke, ymin);
+    fprintf(fp, "%d %g %g %g\n", i, dt, t, ke);
+    fprintf(ferr, "%d %g %g %g\n", i, dt, t, ke);
 
     fflush(fp);
     fclose(fp);

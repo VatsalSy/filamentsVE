@@ -8,6 +8,15 @@ filamentsVE*
 *.deps
 *.tests
 *.s*
+Video
+
+# Custom executables (add your specific executable names here)
+filamentsVE
+filamentsNewt
+filament_initialCondition
+getFacet
+getData-elastic-scalar
+
 !*.c
 !*.h
 !*.sbatch
@@ -80,7 +89,4 @@ deps/
 ehthumbs.db
 Thumbs.db
 
-# Custom executables (add your specific executable names here)
-filamentsVE
-filamentsNewt
 
