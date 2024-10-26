@@ -9,6 +9,7 @@ filamentsVE*
 *.tests
 *.s*
 Video
+*.mp4
 
 # Custom executables (add your specific executable names here)
 filamentsVE
