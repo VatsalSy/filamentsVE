@@ -17,6 +17,7 @@ filamentsNewt
 filament_initialCondition
 getFacet
 getData-elastic-scalar
+pinchOff
 
 !*.c
 !*.h

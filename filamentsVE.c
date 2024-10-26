@@ -48,12 +48,12 @@ int main(int argc, char const *argv[]) {
   X0 = -L0/2.;
   
   // Values taken from the terminal
-  MAXlevel = 12;
-  tmax = 1.75;
-  Oh = 1.25e-2;
+  MAXlevel = atoi(argv[1]);
+  tmax = 4e0;
+  Oh = atof(argv[2]);
   Oha = 1e-2 * Oh;
-  De = 0.10; // 1e-1;
-  Ec = 0.25; // 1e-2;
+  De = atof(argv[3]); // 0.10;
+  Ec = atof(argv[4]); // 0.25;
 
   init_grid (1 << 6);
 
@@ -62,7 +62,7 @@ int main(int argc, char const *argv[]) {
   sprintf (comm, "mkdir -p intermediate");
   system(comm);
   // Name of the restart file. See writingFiles event.
-  sprintf (dumpFile, "restart_init_stretched_filament");
+  sprintf (dumpFile, "restart");
 
 
   rho1 = 1., rho2 = 1e-3;
@@ -75,8 +75,11 @@ int main(int argc, char const *argv[]) {
 
 }
 
+#define FIRST_START 1
+
+#if FIRST_START
 event init (t = 0) {
-  if (!restore (file = dumpFile)){
+  if (!restore (file = "restart_init_stretched_filament")){
     fprintf(ferr, "No restart file found. Exiting!\n");
     return 1;
   }
@@ -85,6 +88,14 @@ event init (t = 0) {
       u.x[] = 0.0;
   }
 }
+#else
+event init (t = 0) {
+  if (!restore (file = dumpFile)){
+    fprintf(ferr, "No restart file found. Exiting!\n");
+    return 1;
+  }
+}
+#endif
 
 /**
 ## Adaptive Mesh Refinement
@@ -115,7 +126,7 @@ event writingFiles (t = 0; t += tsnap; t <= tmax) {
 */
 event end (t = end) {
   if (pid() == 0)
-    fprintf(ferr, "Level %d, Oh %2.1e\n", MAXlevel, Oh);
+    fprintf(ferr, "Level %d, Oh %2.1e, Oha %2.1e, De %2.1e, Ec %2.1e\n", MAXlevel, Oh, Oha, De, Ec);
 }
 
 /**

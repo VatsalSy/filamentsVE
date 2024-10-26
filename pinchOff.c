@@ -1,9 +1,8 @@
 /**
- * @file filament_initialCondition.c
- * @brief This code will give an initial condition where the filament is stretched out, to be used for filament_retraction_VE.c
- * The relaxation time is taken as infinity here to ensure that the polymers undergo affine deformation while stretching. 
+ * @file pinchOff.c
+ * @brief This file contains the simulation code for the pinch-off of a viscoelastic liquid jet. 
  * @author Vatsal Sanjay
- * @version 1.1
+ * @version 1.0
  * @date Oct 26, 2024
 */
 
@@ -12,22 +11,22 @@
 #define FILTERED // Smear density and viscosity jumps
 #include "two-phaseVE.h"
 
+
 #include "log-conform-viscoelastic-scalar-2D.h"
-#define logFile "logAxi-VE.dat"
+#define logFile "logAxi-scalar.dat"
 
 #include "navier-stokes/conserving.h"
 #include "tension.h"
 
-#define tsnap (5e-2)
+#define tsnap (1e-2)
 
 // Error tolerancs
 #define fErr (1e-3)                                 // error tolerance in f1 VOF
 #define KErr (1e-6)                                 // error tolerance in VoF curvature calculated using heigh function method (see adapt event)
 #define VelErr (1e-2)                               // error tolerances in velocity -- Use 1e-2 for low Oh and 1e-3 to 5e-3 for high Oh/moderate to high J
-#define trAErr (1e-3)                                // error tolerance in trace of conformation tensor
 
-#define R2(x,y,z) (sqrt(sq(x) + sq(y)))
-#define U0 4.0 // this is an adhoc initial condition to make the filament form!
+#define epsilon (0.5)
+#define R2(x,y,z,e) (sqrt(sq(y) + sq(z)) + (e*sin(x/4.)))
 
 // boundary conditions
 u.n[top] = neumann(0.0);
@@ -45,18 +44,17 @@ char nameOut[80], dumpFile[80];
 
 int main(int argc, char const *argv[]) {
 
-  L0 = 16.;
-  X0 = -L0/2.;
+  L0 = 2*pi;
   
   // Values taken from the terminal
-  MAXlevel = 10;
-  tmax = 1.75;
-  Oh = 1.25e-2;
+  MAXlevel = 6;
+  tmax = 10;
+  Oh = 1e-2;
   Oha = 1e-2 * Oh;
-  De = 1e2; // 1e-1;
-  Ec = 0.0; // 1e-2;
+  De = 0.1; // 1e-1;
+  Ec = 10.0; // 1e-2;
 
-  init_grid (1 << 6);
+  init_grid (1 << 4);
 
   // Create a folder named intermediate where all the simulation snapshots are stored.
   char comm[80];
@@ -78,26 +76,19 @@ int main(int argc, char const *argv[]) {
 
 event init (t = 0) {
   if (!restore (file = dumpFile)){
-    refine(R2(x,y,z) < (1.1) && R2(x,y,z) > (0.9) && level < MAXlevel);
-    fraction (f, (1-R2(x,y,z)));
-    foreach() {
-      u.x[] = x > 0 ? U0*f[] : -U0*f[];
-    }
+    refine(R2(x,y,z,epsilon) < (1+epsilon) && R2(x,y,z,epsilon) > (1-epsilon) && level < MAXlevel);
+   fraction (f, (1-R2(x,y,z,epsilon)));
   }
 }
 
 /**
 ## Adaptive Mesh Refinement
 */
-scalar KAPPA[], trA[];
-
 event adapt(i++){
+  scalar KAPPA[];
   curvature(f, KAPPA);
-  foreach() {
-    trA[] = (A11[] + A22[] + conform_qq[]);
-  }
-  adapt_wavelet ((scalar *){f, u.x, u.y, KAPPA, trA},
-      (double[]){fErr, VelErr, VelErr, KErr, trAErr},
+  adapt_wavelet ((scalar *){f, u.x, u.y, KAPPA},
+      (double[]){fErr, VelErr, VelErr, KErr},
       MAXlevel, 4);
 }
 
@@ -137,15 +128,19 @@ event logWriting (i++) {
       return 1;
     }
 
+    scalar pos[];
+    position (f, pos, {0,1,0});
+    double ymin = statsf(pos).min;
+
     if (i == 0) {
       fprintf(ferr, "Level %d, Oh %2.1e, Oha %2.1e, De %2.1e, Ec %2.1e\n", MAXlevel, Oh, Oha, De, Ec);
-      fprintf(ferr, "i dt t ke\n");
+      fprintf(ferr, "i dt t ke ymin\n");
       fprintf(fp, "Level %d, Oh %2.1e, Oha %2.1e, De %2.1e, Ec %2.1e\n", MAXlevel, Oh, Oha, De, Ec);
-      fprintf(fp, "i dt t ke\n");
+      fprintf(fp, "i dt t ke ymin\n");
     }
 
-    fprintf(fp, "%d %g %g %g\n", i, dt, t, ke);
-    fprintf(ferr, "%d %g %g %g\n", i, dt, t, ke);
+    fprintf(fp, "%d %g %g %g %g\n", i, dt, t, ke, ymin);
+    fprintf(ferr, "%d %g %g %g %g\n", i, dt, t, ke, ymin);
 
     fflush(fp);
     fclose(fp);
@@ -153,8 +148,8 @@ event logWriting (i++) {
 
   assert(ke > -1e-10);
 
-  if (i > 1e4 && pid() == 0) {
-    if (ke > 1e2*sq(U0) || ke < 1e-8) {
+  if (i > 1e1 && pid() == 0) {
+    if (ke > 1e2 || ke < 1e-8) {
       const char* message = (ke > 1e2) ? 
         "The kinetic energy blew up. Stopping simulation\n" : 
         "kinetic energy too small now! Stopping!\n";
