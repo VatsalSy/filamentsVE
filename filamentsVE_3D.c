@@ -1,9 +1,9 @@
 /**
- * @file filament_initialCondition_3D.c
- * @brief This code will give an initial condition where the filament is stretched out, to be used for filament_retraction_VE.c
- * The relaxation time is taken as infinity here to ensure that the polymers undergo affine deformation while stretching. The code is for 3D.
+ * @file filamentsVE_3D.c
+ * @brief This code will use the initial condition from filament_initialCondition.c and simulate the filament retraction.
+ * This is a 3D version of filamentsVE.c
  * @author Vatsal Sanjay
- * @version 2.0
+ * @version 3.0
  * @date Oct 28, 2024
 */
 
@@ -18,7 +18,7 @@
 #include "navier-stokes/conserving.h"
 #include "tension.h"
 
-#define tsnap (5e-2)
+#define tsnap (1e-2)
 
 // Error tolerancs
 #define fErr (1e-3)                                 // error tolerance in f1 VOF
@@ -26,7 +26,7 @@
 #define VelErr (1e-2)                               // error tolerances in velocity -- Use 1e-2 for low Oh and 1e-3 to 5e-3 for high Oh/moderate to high J
 #define trAErr (1e-3)                                // error tolerance in trace of conformation tensor
 
-#define R2(x,y,z) (sqrt(sq(x) + sq(y) + sq(z)))
+#define R2(x,y,z) (sqrt(sq(x) + sq(y)))
 #define U0 4.0 // this is an adhoc initial condition to make the filament form!
 
 // boundary conditions
@@ -45,16 +45,16 @@ char nameOut[80], dumpFile[80];
 
 int main(int argc, char const *argv[]) {
 
-  L0 = 13.;
+  L0 = 16.;
   X0 = -L0/2.;
   
   // Values taken from the terminal
-  MAXlevel = 8;
-  tmax = 1.75;
-  Oh = 1.25e-2;
+  MAXlevel = 9;
+  tmax = 4e0;
+  Oh = 5e-2;
   Oha = 1e-2 * Oh;
-  De = 1e2; // 1e-1;
-  Ec = 0.0; // 1e-2;
+  De = 1e1; // 0.10;
+  Ec = 1e-1; // 0.25;
 
   init_grid (1 << 6);
 
@@ -76,15 +76,27 @@ int main(int argc, char const *argv[]) {
 
 }
 
+#define FIRST_START 1
+
+#if FIRST_START
 event init (t = 0) {
-  if (!restore (file = dumpFile)){
-    refine(R2(x,y,z) < (1.1) && R2(x,y,z) > (0.9) && level < MAXlevel);
-    fraction (f, (1-R2(x,y,z)));
-    foreach() {
-      u.x[] = x > 0 ? U0*f[] : -U0*f[];
-    }
+  if (!restore (file = "restart_init_stretched_filament")){
+    fprintf(ferr, "No restart file found. Exiting!\n");
+    return 1;
+  }
+  foreach() {
+    foreach_dimension()
+      u.x[] = 0.0;
   }
 }
+#else
+event init (t = 0) {
+  if (!restore (file = dumpFile)){
+    fprintf(ferr, "No restart file found. Exiting!\n");
+    return 1;
+  }
+}
+#endif
 
 /**
 ## Adaptive Mesh Refinement
@@ -114,7 +126,7 @@ event writingFiles (t = 0; t += tsnap; t <= tmax) {
 */
 event end (t = end) {
   if (pid() == 0)
-    fprintf(ferr, "Level %d, Oh %2.1e\n", MAXlevel, Oh);
+    fprintf(ferr, "Level %d, Oh %2.1e, Oha %2.1e, De %2.1e, Ec %2.1e\n", MAXlevel, Oh, Oha, De, Ec);
 }
 
 /**

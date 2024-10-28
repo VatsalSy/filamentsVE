@@ -5,7 +5,7 @@
 import numpy as np
 import subprocess as sp
 import os
-nGFS = 200 
+nGFS = 500 
 
 def gettingview(filename,name):
     exe = ["./getview3D", filename, name]
@@ -20,7 +20,7 @@ if not os.path.isdir(folder):
 for ti in range(nGFS):
     t = 0.01 * ti
     place = "intermediate/snapshot-%5.4f" % t
-    name = "%s/%4.4d.png" %(folder, int(1e4*t))
+    name = "%s/%6.6d.png" %(folder, int(1e4*t))
     if not os.path.exists(place):
         print("File %s not found!" % place)
     else:
