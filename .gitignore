@@ -1,24 +1,30 @@
 # basililsk specific files
 **/*.DS_Store
-intermediate*
-log*.dat
-restart*
-filamentsVE*
-*.tags*
-*.deps
-*.tests
-*.s*
-Video
-*.mp4
+**/*.html
+**/intermediate*
+**/log*.dat
+**/restart*
+**/*.tags*
+**/*.deps
+**/*.tests
+**/*.s*
+**/Video
+**/*.mp4
+**/*.json
+**/*.bv
+**/*.png
 
 # Custom executables (add your specific executable names here)
 filamentsVE
 filamentsNewt
 filament_initialCondition
+filament_initialCondition_3D
 getFacet
 getData-elastic-scalar
 pinchOff
+getview3D
 
+# never exclude these files
 !*.c
 !*.h
 !*.sbatch
@@ -83,9 +89,9 @@ obj/
 deps/
 
 # OS generated files
-.DS_Store
-.DS_Store?
-._*
+**/*.DS_Store
+**/.DS_Store?
+**/._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
