@@ -1,12 +1,12 @@
 /** Title: log-conform-viscoelastic-3D.h
-# Version: 1.1
+# Version: 2.1
 # Main feature 1: A exists in across the domain and relaxes according to \lambda. The stress only acts according to G.
 # Main feature 2: This is the 3D implementation of [log-conform-viscoelastic-scalar-2D.h](log-conform-viscoelastic-scalar-2D.h).
 
 # Author: Vatsal Sanjay
 # vatsalsanjay@gmail.com
 # Physics of Fluids
-# Updated: Oct 20, 2024
+# Updated: Oct 29, 2024
 
 # change log: Oct 19, 2024 (v1.0)
 - 3D implementation
@@ -17,6 +17,19 @@
 - Please report this bug by opening an issue on the GitHub repository. 
 - The code works!!! :) 
 
+# change log: Oct 29, 2024 (v2.0)
+- Rechecked and corrected the entire matrix algebra implementation, particularly in 3D calculations
+- Optimized Omega tensor calculations with improved intermediate variable handling
+- Simplified acceleration term calculations
+- Added verification notes and TODOs for future testing
+- Improved code documentation and maintainability
+
+- Rechecked the entire matrix algebra and found some major mistakes. Fixed them.
+- Please report any bugs by opening an issue on the GitHub repository.
+- The code works (hopefully, no more bugs)!!! :) 
+
+# change log: Oct 29, 2024 (v2.1)
+- Added some initialization functions for pseudo_v and pseudo_t and their 3D counterparts.
 */
 
 /** The code is same as http://basilisk.fr/src/log-conform.h but 
@@ -27,11 +40,144 @@
 /**
  * # TODO: (non-critical, non-urgent)
  * axi compatibility is not there. This will not be fixed. To use axi, please use: [log-conform-viscoelastic-scalar-2D.h](log-conform-viscoelastic-scalar-2D.h) for a scalar formulation, or better yet, use [log-conform-viscoelastic.h](log-conform-viscoelastic.h) which is more efficient.
+ * I have (wherever I could) use the metric terms: cm and fm. Of course, that alone does not guarentee axi compatibility. Proposed steps to do: 
+ * - [ ] enfore all tensors and make the code generally compatible using foreach_dimensions
+ * - [ ] use metric terms: cm and fm.
 */
 
 #if AXI
 #error "axi compatibility is not there. To keep the code easy to read, we will not implement axi compatibility just yet."
 #endif
+
+/**
+# The log-conformation method for some viscoelastic constitutive models
+
+## Introduction
+
+Viscoelastic fluids exhibit both viscous and elastic behaviour when
+subjected to deformation. Therefore these materials are governed by
+the Navier--Stokes equations enriched with an extra *elastic* stress
+$Tij$
+$$
+\rho\left[\partial_t\mathbf{u}+\nabla\cdot(\mathbf{u}\otimes\mathbf{u})\right] = 
+- \nabla p + \nabla\cdot(2\mu_s\mathbf{D}) + \nabla\cdot\mathbf{T}
++ \rho\mathbf{a}
+$$
+where $\mathbf{D}=[\nabla\mathbf{u} + (\nabla\mathbf{u})^T]/2$ is the
+deformation tensor and $\mu_s$ is the solvent viscosity of the
+viscoelastic fluid.
+
+The *polymeric* stress $\mathbf{T}$ represents memory effects due to
+the polymers. Several constitutive rheological models are available in
+the literature where the polymeric stress $\mathbf{T}$ is typically a 
+function $\mathbf{f_s}(\cdot)$ of the conformation tensor $\mathbf{A}$ such as
+$$
+\mathbf{T} = G_p \mathbf{f_s}(\mathbf{A})
+$$
+where $G_p$ is the elastic modulus and $\mathbf{f_s}(\cdot)$ is the relaxation function.
+
+The conformation tensor $\mathbf{A}$ is related to the deformation of
+the polymer chains. $\mathbf{A}$ is governed by the equation
+$$
+D_t \mathbf{A} - \mathbf{A} \cdot \nabla \mathbf{u} - \nabla
+\mathbf{u}^{T} \cdot \mathbf{A} =
+-\frac{\mathbf{f_r}(\mathbf{A})}{\lambda} 
+$$
+where $D_t$ denotes the material derivative and
+$\mathbf{f_r}(\cdot)$ is the relaxation function. Here, $\lambda$ is the relaxation time.
+
+In the case of an Oldroyd-B viscoelastic fluid, $\mathbf{f}_s
+(\mathbf{A}) = \mathbf{f}_r (\mathbf{A}) = \mathbf{A} -\mathbf{I}$,
+and the above equations can be combined to avoid the use of
+$\mathbf{A}$
+$$
+\mathbf{T} + \lambda (D_t \mathbf{T} -
+\mathbf{T} \cdot \nabla \mathbf{u} -
+\nabla \mathbf{u}^{T} \cdot \mathbf{T})  = 2 G_p\lambda \mathbf{D}
+$$
+
+[Comminal et al. (2015)](#comminal2015) gathered the functions
+$\mathbf{f}_s (\mathbf{A})$ and $\mathbf{f}_r (\mathbf{A})$ for
+different constitutive models.
+
+## Parameters
+
+The primary parameters are the relaxation time
+$\lambda$ and the elastic modulus $G_p$. The solvent viscosity
+$\mu_s$ is defined in the [Navier-Stokes
+solver](navier-stokes/centered.h). 
+
+Gp and lambda are defined in [two-phaseVE.h](two-phaseVE.h).
+*/
+
+/**
+## The log conformation approach
+
+The numerical resolution of viscoelastic fluid problems often faces the
+[High-Weissenberg Number
+Problem](http://www.ma.huji.ac.il/~razk/iWeb/My_Site/Research_files/Visco1.pdf). 
+This is a numerical instability appearing when strongly elastic flows
+create regions of high stress and fine features. This instability
+poses practical limits to the values of the relaxation time of the
+viscoelastic fluid, $\lambda$.  [Fattal \& Kupferman (2004,
+2005)](#fattal2004) identified the exponential nature of the solution
+as the origin of the instability. They proposed to use the logarithm
+of the conformation tensor $\Psi = \log \, \mathbf{A}$ rather than the
+viscoelastic stress tensor to circumvent the instability.
+
+The constitutive equation for the log of the conformation tensor is
+$$ 
+D_t \Psi = (\Omega \cdot \Psi -\Psi \cdot \Omega) + 2 \mathbf{B} +
+\frac{e^{-\Psi} \mathbf{f}_r (e^{\Psi})}{\lambda}
+$$
+where $\Omega$ and $\mathbf{B}$ are tensors that result from the
+decomposition of the transpose of the tensor gradient of the
+velocity
+$$ 
+(\nabla \mathbf{u})^T = \Omega + \mathbf{B} + N
+\mathbf{A}^{-1} 
+$$ 
+
+The antisymmetric tensor $\Omega$ requires only the memory of a scalar
+in 2D since,
+$$ 
+\Omega = \left( 
+\begin{array}{cc}
+0 & \Omega_{12} \\
+-\Omega_{12} & 0
+\end{array} 
+\right)
+$$
+
+For 3D, $\Omega$ is a skew-symmetric tensor given by
+
+$$
+\Omega = \left( 
+\begin{array}{ccc}
+0 & \Omega_{12} & \Omega_{13} \\
+-\Omega_{12} & 0 & \Omega_{23} \\
+-\Omega_{13} & -\Omega_{23} & 0
+\end{array} 
+\right)
+$$
+
+The log-conformation tensor, $\Psi$, is related to the
+polymeric stress tensor $\mathbf{T}$, by the strain function 
+$\mathbf{f}_s (\mathbf{A})$
+$$ 
+\Psi = \log \, \mathbf{A} \quad \mathrm{and} \quad \mathbf{T} =
+\frac{G_p}{\lambda} \mathbf{f}_s (\mathbf{A})
+$$
+where $Tr$ denotes the trace of the tensor and $L$ is an additional
+property of the viscoelastic fluid.
+
+We will use the Bell--Collela--Glaz scheme to advect the log-conformation 
+tensor $\Psi$. */
+
+/*
+TODO: 
+- Perhaps, instead of the Bell--Collela--Glaz scheme, we can use the conservative form of the advection equation and transport the log-conformation tensor with the VoF color function, similar to [http://basilisk.fr/src/navier-stokes/conserving.h](http://basilisk.fr/src/navier-stokes/conserving.h)
+*/
 
 #include "bcg.h"
 
@@ -97,6 +243,18 @@ arrays not related to the grid. */
 typedef struct { double x, y;}   pseudo_v;
 typedef struct { pseudo_v x, y;} pseudo_t;
 
+// Function to initialize pseudo_v
+static inline void init_pseudo_v(pseudo_v *v, double value) {
+    v->x = value;
+    v->y = value;
+}
+
+// Function to initialize pseudo_t
+static inline void init_pseudo_t(pseudo_t *t, double value) {
+    init_pseudo_v(&t->x, value);
+    init_pseudo_v(&t->y, value);
+}
+
 static void diagonalization_2D (pseudo_v * Lambda, pseudo_t * R, pseudo_t * A)
 {
   /**
@@ -142,8 +300,22 @@ Now this is the 3D implementation.
 
 #include "eigen_decomposition.h"
 
-typedef struct { double x, y, z; }   pseudo_v3d;
+typedef struct { double x, y, z; } pseudo_v3d;
 typedef struct { pseudo_v3d x, y, z; } pseudo_t3d;
+
+// Function to initialize pseudo_v3d
+static inline void init_pseudo_v3d(pseudo_v3d *v, double value) {
+    v->x = value;
+    v->y = value;
+    v->z = value;
+}
+
+// Function to initialize pseudo_t3d
+static inline void init_pseudo_t3d(pseudo_t3d *t, double value) {
+    init_pseudo_v3d(&t->x, value);
+    init_pseudo_v3d(&t->y, value);
+    init_pseudo_v3d(&t->z, value);
+}
 
 static void diagonalization_3D (pseudo_v3d * Lambda, pseudo_t3d * R, pseudo_t3d * A)
 {
@@ -201,11 +373,7 @@ tensor $\mathbf{A}$). In an Oldroyd-B viscoelastic fluid, the model is
 $$ 
 \partial_t \mathbf{A} = -\frac{\mathbf{f}_r (\mathbf{A})}{\lambda}
 $$
-
-The implementation below assumes that the values of $\Psi$ and
-$\conform_p$ are never needed simultaneously. This means that $\conform_p$ can
-be used to store (temporarily) the values of $\Psi$ (i.e. $\Psi$ is
-just an alias for $\conform_p$). */
+*/
 
 #if dimension == 2
 event tracer_advection(i++)
@@ -227,11 +395,7 @@ event tracer_advection(i++)
       $$
     */
 
-    pseudo_t A;
-
-    A.x.x = A11[];
-    A.x.y = A12[];
-    A.y.y = A22[];
+    pseudo_t A = {{A11[], A12[]}, {A12[], A22[]}};
 
     /**
     The conformation tensor is diagonalized through the
@@ -239,7 +403,9 @@ event tracer_advection(i++)
     tensor, $\Lambda$. */
 
     pseudo_v Lambda;
+    init_pseudo_v(&Lambda, 0.0);  
     pseudo_t R;
+    init_pseudo_t(&R, 0.0);
     diagonalization_2D (&Lambda, &R, &A);
     
     /**
@@ -257,9 +423,36 @@ event tracer_advection(i++)
     The diagonalization will be applied to the velocity gradient
     $(\nabla u)^T$ to obtain the antisymmetric tensor $\Omega$ and
     the traceless, symmetric tensor, $\mathbf{B}$. If the conformation
-    tensor is $\mathbf{I}$, $\Omega = 0$ and $\mathbf{B}= \mathbf{D}$.  */
+    tensor is $\mathbf{I}$, $\Omega = 0$ and $\mathbf{B}= \mathbf{D}$.  
+
+    Otherwise, compute M = R * (nablaU)^T * R^T, where nablaU is the velocity gradient tensor. Then, 
+    
+    1. Calculate omega using the off-diagonal elements of M and eigenvalues:
+       omega = (Lambda.y*M.x.y + Lambda.x*M.y.x)/(Lambda.y - Lambda.x)
+       This represents the rotation rate in the eigenvector basis.
+    
+    2. Transform omega back to physical space to get OM:
+       OM = (R.x.x*R.y.y - R.x.y*R.y.x)*omega
+       This gives us the rotation tensor Omega in the original coordinate system.
+    
+    3. Compute B tensor components using M and R: B is related to M and R through:
+       
+       In 2D:
+       $$
+       B_{xx} = R_{xx}^2 M_{xx} + R_{xy}^2 M_{yy} \\
+       B_{xy} = R_{xx}R_{yx} M_{xx} + R_{xy}R_{yy} M_{yy} \\
+       B_{yx} = B_{xy} \\
+       B_{yy} = -B_{xx}
+       $$
+       
+       Where:
+       - R is the eigenvector matrix of the conformation tensor
+       - M is the velocity gradient tensor in the eigenvector basis
+       - The construction ensures B is symmetric and traceless
+    */
 
     pseudo_t B;
+    init_pseudo_t(&B, 0.0);
     double OM = 0.;
     if (fabs(Lambda.x - Lambda.y) <= 1e-20) {
       B.x.y = (u.y[1,0] - u.y[-1,0] + u.x[0,1] - u.x[0,-1])/(4.*Delta); 
@@ -267,6 +460,7 @@ event tracer_advection(i++)
         B.x.x = (u.x[1,0] - u.x[-1,0])/(2.*Delta);
     } else {
       pseudo_t M;
+      init_pseudo_t(&M, 0.0);
       foreach_dimension() {
         M.x.x = (sq(R.x.x)*(u.x[1] - u.x[-1]) +
         sq(R.y.x)*(u.y[0,1] - u.y[0,-1]) +
@@ -306,7 +500,7 @@ event tracer_advection(i++)
   advection ({Psi11, Psi12, Psi22}, uf, dt);
 
   /**
-  ### Convert back to \conform_p */
+  ### Convert back to Aij */
 
   foreach() {
     /**
@@ -315,7 +509,10 @@ event tracer_advection(i++)
     and to perform step (c).*/
 
     pseudo_t A = {{Psi11[], Psi12[]}, {Psi12[], Psi22[]}}, R;
+    init_pseudo_t(&R, 0.0);
     pseudo_v Lambda;
+    init_pseudo_v(&Lambda, 0.0);
+
     diagonalization_2D (&Lambda, &R, &A);
     Lambda.x = exp(Lambda.x), Lambda.y = exp(Lambda.y);
     
@@ -365,7 +562,9 @@ event tracer_advection(i++)
 
   foreach() {
     pseudo_t3d A, R;
+    init_pseudo_t3d(&R, 0.0);
     pseudo_v3d Lambda;
+    init_pseudo_v3d(&Lambda, 0.0);
 
     A.x.x = A11[]; A.x.y = A12[]; A.x.z = A13[];
     A.y.x = A12[]; A.y.y = A22[]; A.y.z = A23[];
@@ -384,21 +583,25 @@ event tracer_advection(i++)
       exit(1);
     }
     
-    // Compute Psi = log(A)
-    Psi11[] = R.x.x*R.x.x*log(Lambda.x) + R.y.x*R.y.x*log(Lambda.y) + R.z.x*R.z.x*log(Lambda.z);
-    Psi22[] = R.x.y*R.x.y*log(Lambda.x) + R.y.y*R.y.y*log(Lambda.y) + R.z.y*R.z.y*log(Lambda.z);
-    Psi33[] = R.x.z*R.x.z*log(Lambda.x) + R.y.z*R.y.z*log(Lambda.y) + R.z.z*R.z.z*log(Lambda.z);
+    // Compute Psi = log(A) = R * log(Lambda) * R^T
+    Psi11[] = sq(R.x.x)*log(Lambda.x) + sq(R.x.y)*log(Lambda.y) + sq(R.x.z)*log(Lambda.z);
+    Psi22[] = sq(R.y.x)*log(Lambda.x) + sq(R.y.y)*log(Lambda.y) + sq(R.y.z)*log(Lambda.z);
+    Psi33[] = sq(R.z.x)*log(Lambda.x) + sq(R.z.y)*log(Lambda.y) + sq(R.z.z)*log(Lambda.z);
 
-    Psi12[] = R.x.x*R.x.y*log(Lambda.x) + R.y.x*R.y.y*log(Lambda.y) + R.z.x*R.z.y*log(Lambda.z);
-    Psi13[] = R.x.x*R.x.z*log(Lambda.x) + R.y.x*R.y.z*log(Lambda.y) + R.z.x*R.z.z*log(Lambda.z);
-    Psi23[] = R.x.y*R.x.z*log(Lambda.x) + R.y.y*R.y.z*log(Lambda.y) + R.z.y*R.z.z*log(Lambda.z);
+    Psi12[] = R.x.x*R.y.x*log(Lambda.x) + R.x.y*R.y.y*log(Lambda.y) + R.x.z*R.y.z*log(Lambda.z);
+    Psi13[] = R.x.x*R.z.x*log(Lambda.x) + R.x.y*R.z.y*log(Lambda.y) + R.x.z*R.z.z*log(Lambda.z);
+    Psi23[] = R.y.x*R.z.x*log(Lambda.x) + R.y.y*R.z.y*log(Lambda.y) + R.y.z*R.z.z*log(Lambda.z);
 
     // Compute B and Omega tensors (3D version)
     pseudo_t3d B, M, Omega;
+    init_pseudo_t3d(&B, 0.0);
+    init_pseudo_t3d(&M, 0.0);
+    init_pseudo_t3d(&Omega, 0.0);
 
     // Check if any pair of eigenvalues are numerically equal (within a small tolerance)
     if (fabs(Lambda.x - Lambda.y) <= 1e-20 || fabs(Lambda.y - Lambda.z) <= 1e-20 || fabs(Lambda.z - Lambda.x) <= 1e-20) {
       // In case of equal eigenvalues, the calculations for B and Omega simplify significantly
+      // B is grad U and Omega is zero.
 
       // Compute off-diagonal elements of B using central differences
       // These represent the symmetric part of the velocity gradient tensor
@@ -444,11 +647,19 @@ event tracer_advection(i++)
       double dwdz = (u.z[0,0,1] - u.z[0,0,-1])/(2.0*Delta);  // dw/dz
 
       /*
-      Calculate M tensor: M = R^T * (nablaU)^T * R
-      - This transforms the velocity gradient tensor to the eigenvector basis
+      Calculate the M tensor through matrix multiplication: M = R * (nablaU)^T R^T. This represents the velocity gradient tensor transformed to the eigenvector basis of the conformation tensor.
+      
+      * Steps:
+      1. Compute intermediate products (R * nablaU^T):
+         - Store row-wise products in Rx_gradU_*, Ry_gradU_*, Rz_gradU_*
+         - Each variable represents one row of the intermediate matrix
+      2. Multiply by R^T to obtain the final M tensor:
+         - M.i.j represents the (i,j) component of the transformed velocity gradient
+         - This transformation expresses the velocity gradient in the eigenvector basis
+         - The resulting M tensor is used to compute Omega (Ω) and B tensors, such that 
       */
 
-      // First, compute intermediate products of R^T and (nablaU)^T
+      // First, compute intermediate products of R and (nablaU)^T
       double Rx_gradU_x = R.x.x*dudx + R.x.y*dvdx + R.x.z*dwdx;
       double Rx_gradU_y = R.x.x*dudy + R.x.y*dvdy + R.x.z*dwdy;
       double Rx_gradU_z = R.x.x*dudz + R.x.y*dvdz + R.x.z*dwdz;
@@ -461,7 +672,7 @@ event tracer_advection(i++)
       double Rz_gradU_y = R.z.x*dudy + R.z.y*dvdy + R.z.z*dwdy;
       double Rz_gradU_z = R.z.x*dudz + R.z.y*dvdz + R.z.z*dwdz;
 
-      // Now compute M components by multiplying the intermediate products with R
+      // Now compute M components by multiplying the intermediate products with R^T
       M.x.x = R.x.x*Rx_gradU_x + R.x.y*Rx_gradU_y + R.x.z*Rx_gradU_z;
       M.x.y = R.x.x*Ry_gradU_x + R.x.y*Ry_gradU_y + R.x.z*Ry_gradU_z;
       M.x.z = R.x.x*Rz_gradU_x + R.x.y*Rz_gradU_y + R.x.z*Rz_gradU_z;
@@ -479,30 +690,69 @@ event tracer_advection(i++)
       double omega_xz = (Lambda.z*M.x.z + Lambda.x*M.z.x)/(Lambda.z - Lambda.x);
       double omega_yz = (Lambda.z*M.y.z + Lambda.y*M.z.y)/(Lambda.z - Lambda.y);
 
-      // Calculate intermediate terms for the transformation back to the original coordinate system
-      double omega_xy_term_x = R.x.x*omega_xy - R.x.z*omega_yz;
-      double omega_xy_term_y = R.y.x*omega_xy + R.y.z*omega_xz;
-      double omega_xz_term_x = R.x.x*omega_xz + R.y.x*omega_yz;
-      double omega_xy_term_xy = R.x.y*omega_xy - R.x.z*omega_yz;
-      double omega_xy_term_yy = R.y.y*omega_xy + R.y.z*omega_xz;
-      double omega_xz_term_xy = R.x.y*omega_xz + R.y.y*omega_yz;
-      double omega_xy_term_xz = R.x.z*omega_xy - R.x.z*omega_yz;
-      double omega_xz_term_yz = R.y.z*omega_xy + R.z.z*omega_xz;
-      double omega_yz_term_z = R.x.z*omega_xz + R.y.z*omega_yz;
+      // Calculate intermediate rotation combinations for each direction
+      // x-direction rotation combinations
+      double rot_x_xy_yz = (R.x.x*omega_xy - R.x.z*omega_yz);  // xy rotation minus yz rotation, x components
+      double rot_x_xy_xz = (R.x.y*omega_xy + R.x.z*omega_xz);  // xy rotation plus xz rotation, x components
+      double rot_x_xz_yz = (R.x.x*omega_xz + R.x.y*omega_yz);  // xz rotation plus yz rotation, x components
 
-      // Compute Omega components by transforming back to the original coordinate system: Omega = R * omega * R^T
-      Omega.x.x = R.x.y*omega_xy_term_x - R.x.x*omega_xy_term_xy + R.x.z*omega_xy_term_xz;
-      Omega.x.y = R.y.y*omega_xy_term_x - R.y.x*omega_xy_term_xy + R.y.z*omega_xy_term_xz;
-      Omega.x.z = R.z.y*omega_xy_term_x - R.z.x*omega_xy_term_xy + R.z.z*omega_xy_term_xz;
+      // y-direction rotation combinations
+      double rot_y_xy_yz = (R.y.x*omega_xy - R.y.z*omega_yz);  // xy rotation minus yz rotation, y components
+      double rot_y_xy_xz = (R.y.y*omega_xy + R.y.z*omega_xz);  // xy rotation plus xz rotation, y components
+      double rot_y_xz_yz = (R.y.x*omega_xz + R.y.y*omega_yz);  // xz rotation plus yz rotation, y components
 
-      Omega.y.x = R.x.y*omega_xy_term_y - R.x.x*omega_xy_term_yy + R.x.z*omega_xz_term_yz;
-      Omega.y.y = R.y.y*omega_xy_term_y - R.y.x*omega_xy_term_yy + R.y.z*omega_xz_term_yz;
-      Omega.y.z = R.z.y*omega_xy_term_y - R.z.x*omega_xy_term_yy + R.z.z*omega_xz_term_yz;
+      // z-direction rotation combinations
+      double rot_z_xy_yz = (R.z.x*omega_xy - R.z.z*omega_yz);  // xy rotation minus yz rotation, z components
+      double rot_z_xy_xz = (R.z.y*omega_xy + R.z.z*omega_xz);  // xy rotation plus xz rotation, z components
+      double rot_z_xz_yz = (R.z.x*omega_xz + R.z.y*omega_yz);  // xz rotation plus yz rotation, z components
 
-      Omega.z.x = R.x.y*omega_xz_term_x - R.x.x*omega_xz_term_xy + R.x.z*omega_yz_term_z;
-      Omega.z.y = R.y.y*omega_xz_term_x - R.y.x*omega_xz_term_xy + R.y.z*omega_yz_term_z;
-      Omega.z.z = R.z.y*omega_xz_term_x - R.z.x*omega_xz_term_xy + R.z.z*omega_yz_term_z;
+      /* Calculate the components of the Omega tensor in the physical coordinate system
+       * 
+       * The Omega tensor represents the rotational part of the velocity gradient tensor
+       * and is computed through the following steps:
+       * 
+       * 1. We already have:
+       *    - R: eigenvector matrix of the conformation tensor
+       *    - rot_*_*_*: pre-computed rotation combinations for each direction
+       * 
+       * 2. Mathematical background:
+       *    Omega = R * Omega_eigen * R^T
+       *    where Omega_eigen is the rotation tensor in eigenvector space
+       * 
+       * 3. The components are calculated using the rotation combinations:
+       *    - rot_i_jk_lm represents combined rotations in the i-direction
+       *    - Each component Omega_ij is a linear combination of these rotations
+       */
+
+      // Compute x-row components of Omega
+      Omega.x.x = R.x.y*rot_x_xy_yz  // xy-yz rotation contribution
+                - R.x.x*rot_x_xy_xz   // xy-xz rotation contribution
+                + R.x.z*rot_x_xz_yz;  // xz-yz rotation contribution
       
+      Omega.x.y = R.y.y*rot_x_xy_yz  // xy-yz rotation mapped to y-direction
+                - R.y.x*rot_x_xy_xz   // xy-xz rotation mapped to y-direction
+                + R.y.z*rot_x_xz_yz;  // xz-yz rotation mapped to y-direction
+      
+      Omega.x.z = R.z.y*rot_x_xy_yz  // xy-yz rotation mapped to z-direction
+                - R.z.x*rot_x_xy_xz   // xy-xz rotation mapped to z-direction
+                + R.z.z*rot_x_xz_yz;  // xz-yz rotation mapped to z-direction
+
+      // Compute y-row components using similar pattern
+      Omega.y.x = R.x.y*rot_y_xy_yz - R.x.x*rot_y_xy_xz + R.x.z*rot_y_xz_yz;
+      Omega.y.y = R.y.y*rot_y_xy_yz - R.y.x*rot_y_xy_xz + R.y.z*rot_y_xz_yz;
+      Omega.y.z = R.z.y*rot_y_xy_yz - R.z.x*rot_y_xy_xz + R.z.z*rot_y_xz_yz;
+
+      // Compute z-row components using similar pattern
+      Omega.z.x = R.x.y*rot_z_xy_yz - R.x.x*rot_z_xy_xz + R.x.z*rot_z_xz_yz;
+      Omega.z.y = R.y.y*rot_z_xy_yz - R.y.x*rot_z_xy_xz + R.y.z*rot_z_xz_yz;
+      Omega.z.z = R.z.y*rot_z_xy_yz - R.z.x*rot_z_xy_xz + R.z.z*rot_z_xz_yz;
+
+      /* Note: The resulting Omega tensor is skew-symmetric, meaning:
+       * Omega_ij = -Omega_ji
+       * This property is automatically satisfied by the construction above
+       * and is essential for preserving the physical meaning of rotation
+       */
+
       // Extract diagonal components of M (velocity gradient tensor in eigenvector basis)
       double M_diag_x = M.x.x, M_diag_y = M.y.y, M_diag_z = M.z.z;
 
@@ -513,14 +763,14 @@ event tracer_advection(i++)
       */
 
       // Compute diagonal elements of B
-      B.x.x = M_diag_x*sq(R.x.x) + M_diag_y*sq(R.y.x) + M_diag_z*sq(R.z.x);
-      B.y.y = M_diag_x*sq(R.x.y) + M_diag_y*sq(R.y.y) + M_diag_z*sq(R.z.y);
-      B.z.z = M_diag_x*sq(R.x.z) + M_diag_y*sq(R.y.z) + M_diag_z*sq(R.z.z);
+      B.x.x = M_diag_x*sq(R.x.x) + M_diag_y*sq(R.x.y) + M_diag_z*sq(R.x.z);
+      B.y.y = M_diag_x*sq(R.y.x) + M_diag_y*sq(R.y.y) + M_diag_z*sq(R.y.z);
+      B.z.z = M_diag_x*sq(R.z.x) + M_diag_y*sq(R.x.y) + M_diag_z*sq(R.z.z);
 
       // Compute off-diagonal elements of B (upper triangle)
-      B.x.y = M_diag_x*R.x.x*R.x.y + M_diag_y*R.y.x*R.y.y + M_diag_z*R.z.x*R.z.y;
-      B.x.z = M_diag_x*R.x.x*R.x.z + M_diag_y*R.y.x*R.y.z + M_diag_z*R.z.x*R.z.z;
-      B.y.z = M_diag_x*R.x.y*R.x.z + M_diag_y*R.y.y*R.y.z + M_diag_z*R.z.y*R.z.z;
+      B.x.y = M_diag_x*R.x.x*R.y.x + M_diag_y*R.x.y*R.y.y + M_diag_z*R.x.z*R.y.z;
+      B.x.z = M_diag_x*R.x.x*R.z.x + M_diag_y*R.x.y*R.z.y + M_diag_z*R.x.z*R.z.z;
+      B.y.z = M_diag_x*R.y.x*R.z.x + M_diag_y*R.y.y*R.z.y + M_diag_z*R.y.z*R.z.z;
 
       // Fill in lower triangle using symmetry of B
       B.y.x = B.x.y;
@@ -528,7 +778,13 @@ event tracer_advection(i++)
       B.z.y = B.y.z;
     }
 
-    // Update Psi components
+    /**
+    We now advance $\Psi$ in time, adding the upper convective
+    contribution. 
+    This step 1: \partial_t \Psi = 2 \mathbf{B} + (\Omega \cdot \Psi -\Psi \cdot \Omega)
+    */
+
+    // save old values of Psi components
     double old_Psi11 = Psi11[];
     double old_Psi22 = Psi22[];
     double old_Psi33 = Psi33[];
@@ -537,17 +793,17 @@ event tracer_advection(i++)
     double old_Psi23 = Psi23[];
 
     // Psi11
-    Psi11[] += dt * (2.0 * B.x.x + 2 * Omega.x.y * old_Psi12 + 2 * Omega.x.z * old_Psi13);
+    Psi11[] += dt * (2.0 * B.x.x + Omega.x.y * old_Psi12 - Omega.y.x * old_Psi12 + Omega.x.z * old_Psi13 - Omega.z.x * old_Psi13);
     // Psi22
-    Psi22[] += dt * (2.0 * B.y.y - 2 * Omega.x.y * old_Psi12 + 2 * Omega.y.z * old_Psi23);
+    Psi22[] += dt * (2.0 * B.y.y - Omega.x.y * old_Psi12 + Omega.y.x * old_Psi12 + Omega.y.z * old_Psi23 - Omega.z.y * old_Psi23);
     // Psi33
-    Psi33[] += dt * (2.0 * B.z.z - 2 * Omega.x.z * old_Psi13 - 2 * Omega.y.z * old_Psi23);
+    Psi33[] += dt * (2.0 * B.z.z - Omega.x.z * old_Psi13 + Omega.z.x * old_Psi13 - Omega.y.z * old_Psi23 + Omega.z.y * old_Psi23);
     // Psi12
-    Psi12[] += dt * (2.0 * B.x.y - Omega.x.y * old_Psi11 + Omega.x.y * old_Psi22 + Omega.x.z * old_Psi23 + Omega.x.z * old_Psi13);
+    Psi12[] += dt * (2.0 * B.x.y + Omega.x.x * old_Psi12 - Omega.x.y * old_Psi11 + Omega.x.y * old_Psi22 - Omega.y.y * old_Psi12 + Omega.x.z * old_Psi23 - Omega.z.y * old_Psi13);
     // Psi13
-    Psi13[] += dt * (2.0 * B.x.z - Omega.x.z * old_Psi11 + Omega.x.z * old_Psi33 + Omega.x.y * old_Psi23 + Omega.x.y * old_Psi12);
+    Psi13[] += dt * (2.0 * B.x.z + Omega.x.x*old_Psi13 - Omega.x.z * old_Psi11 + Omega.x.y*old_Psi23 - Omega.y.z*old_Psi12 + Omega.x.z * old_Psi33 - Omega.z.z * old_Psi13);
     // Psi23
-    Psi23[] += dt * (2.0 * B.y.z - Omega.y.z * old_Psi22 + Omega.y.z * old_Psi33 - Omega.x.y * old_Psi13 - Omega.x.z * old_Psi12);
+    Psi23[] += dt * (2.0 * B.y.z + Omega.y.x * old_Psi13 - Omega.x.z * old_Psi12 + Omega.y.y * old_Psi23 - Omega.y.z * old_Psi22 + Omega.y.z * old_Psi33 - Omega.z.z * old_Psi23);
 
   }
 
@@ -564,7 +820,9 @@ event tracer_advection(i++)
 
   foreach() {
     pseudo_t3d A, R;
+    init_pseudo_t3d(&R, 0.0);
     pseudo_v3d Lambda;
+    init_pseudo_v3d(&Lambda, 0.0);
 
     // Reconstruct the log-conformation tensor from its components
     A.x.x = Psi11[]; A.x.y = Psi12[]; A.x.z = Psi13[];
@@ -580,12 +838,12 @@ event tracer_advection(i++)
     Lambda.z = exp(Lambda.z);
 
     // Reconstruct A using A = R * diag(Lambda) * R^T
-    A11[] = Lambda.x * R.x.x * R.x.x + Lambda.y * R.x.y * R.x.y + Lambda.z * R.x.z * R.x.z;
+    A11[] = Lambda.x * sq(R.x.x) + Lambda.y * sq(R.x.y) + Lambda.z * sq(R.x.z);
     A12[] = Lambda.x * R.x.x * R.y.x + Lambda.y * R.x.y * R.y.y + Lambda.z * R.x.z * R.y.z;
     A13[] = Lambda.x * R.x.x * R.z.x + Lambda.y * R.x.y * R.z.y + Lambda.z * R.x.z * R.z.z;
-    A22[] = Lambda.x * R.y.x * R.y.x + Lambda.y * R.y.y * R.y.y + Lambda.z * R.y.z * R.y.z;
+    A22[] = Lambda.x * sq(R.y.x) + Lambda.y * sq(R.y.y) + Lambda.z * sq(R.y.z);
     A23[] = Lambda.x * R.y.x * R.z.x + Lambda.y * R.y.y * R.z.y + Lambda.z * R.y.z * R.z.z;
-    A33[] = Lambda.x * R.z.x * R.z.x + Lambda.y * R.z.y * R.z.y + Lambda.z * R.z.z * R.z.z;
+    A33[] = Lambda.x * sq(R.z.x) + Lambda.y * sq(R.z.y) + Lambda.z * sq(R.z.z);
 
     // Apply relaxation using the relaxation time lambda
     double intFactor = lambda[] != 0. ? exp(-dt/lambda[]) : 0.;
