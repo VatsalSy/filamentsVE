@@ -1,5 +1,7 @@
 # Filaments breakup: effect of viscoelasticity
 
+See: [https://github.com/comphy-lab/Viscoelastic3D](https://github.com/comphy-lab/Viscoelastic3D) for the source code of the new viscoelastic scalar (2D, axi, and 3D) implementation. 
+
 There are three main codes:
 * filament_initialCondition.c: run this code to generate the initial condition for the filament. This code takes a spherical blob and stretches it into a filament. To study the effect of viscoelasticity, starting from an already stretched filament with no conformation will not work. So, we start with a blob and stretch it (with an extremely high Deborah number) into a filament. This way we get a filament with a non-trivial conformation.
 
