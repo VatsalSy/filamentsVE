@@ -1,5 +1,7 @@
 # Filaments breakup: effect of viscoelasticity
 
+[![DOI](https://zenodo.org/badge/878624584.svg)](https://doi.org/10.5281/zenodo.14011673)
+
 See: [https://github.com/comphy-lab/Viscoelastic3D](https://github.com/comphy-lab/Viscoelastic3D) for the source code of the new viscoelastic scalar (2D, axi, and 3D) implementation. 
 
 There are three main codes:
